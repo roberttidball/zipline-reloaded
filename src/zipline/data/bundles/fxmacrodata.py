@@ -14,7 +14,7 @@ from . import core as bundles
 
 log = logging.getLogger(__name__)
 
-FXMACRODATA_API_URL = "https://fxmacrodata.com/api/v1/forex"
+FXMACRODATA_API_URL = "https://api.fxmacrodata.com/v1/forex"
 DEFAULT_SYMBOLS = "EURUSD,GBPUSD,USDJPY,AUDUSD"
 
 
