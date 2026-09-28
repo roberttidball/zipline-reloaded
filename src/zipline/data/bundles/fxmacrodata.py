@@ -11,7 +11,6 @@ import requests
 
 from . import core as bundles
 
-
 log = logging.getLogger(__name__)
 
 FXMACRODATA_API_URL = "https://api.fxmacrodata.com/v1/forex"
@@ -32,29 +31,31 @@ def split_pair(symbol):
 
     if len(clean_symbol) != 6:
         raise ValueError(
-            "FXMacroData symbols must be six-letter FX pairs, "
-            "for example EURUSD"
+            "FXMacroData symbols must be six-letter FX pairs, for example EURUSD"
         )
 
     return clean_symbol[:3], clean_symbol[3:]
 
 
-def format_fxmacrodata_url(symbol, start_date, end_date, api_key=None):
+def format_fxmacrodata_url(symbol, start_date, end_date):
     base, quote = split_pair(symbol)
     query = {
         "start_date": start_date.strftime("%Y-%m-%d"),
         "end_date": end_date.strftime("%Y-%m-%d"),
     }
 
-    if api_key:
-        query["api_key"] = api_key
-
     return f"{FXMACRODATA_API_URL}/{base.lower()}/{quote.lower()}?{urlencode(query)}"
 
 
+def fxmacrodata_headers(api_key=None):
+    if api_key:
+        return {"X-API-Key": api_key}
+    return {}
+
+
 def fetch_fx_pair(symbol, start_date, end_date, api_key=None):
-    url = format_fxmacrodata_url(symbol, start_date, end_date, api_key)
-    response = requests.get(url, timeout=30)
+    url = format_fxmacrodata_url(symbol, start_date, end_date)
+    response = requests.get(url, headers=fxmacrodata_headers(api_key), timeout=30)
     response.raise_for_status()
     rows = response.json().get("data", [])
 
@@ -92,9 +93,9 @@ def gen_asset_metadata(data):
     del asset_metadata["date"]
     asset_metadata.columns = asset_metadata.columns.get_level_values(0)
     asset_metadata["exchange"] = "FXMACRODATA"
-    asset_metadata["auto_close_date"] = (
-        asset_metadata["end_date"].values + pd.Timedelta(days=1)
-    )
+    asset_metadata["auto_close_date"] = asset_metadata[
+        "end_date"
+    ].values + pd.Timedelta(days=1)
     return asset_metadata
 
 
@@ -127,8 +128,8 @@ def fxmacrodata_bundle(
 
     - ``FXMACRODATA_SYMBOLS``: comma-separated FX pairs such as
       ``EURUSD,GBPUSD,USDJPY``.  Defaults to major USD pairs.
-    - ``FXMACRODATA_API_KEY``: optional Professional API key for protected
-      history windows.
+    - ``FXMACRODATA_API_KEY``: FXMacroData API key, sent in the
+      ``X-API-Key`` request header.
     """
     symbols = parse_symbols(environ)
     api_key = environ.get("FXMACRODATA_API_KEY")
