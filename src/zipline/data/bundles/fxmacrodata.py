@@ -15,6 +15,9 @@ log = logging.getLogger(__name__)
 
 FXMACRODATA_API_URL = "https://api.fxmacrodata.com/v1/forex"
 DEFAULT_SYMBOLS = "EURUSD,GBPUSD,USDJPY,AUDUSD"
+# the API returns at most 100 rows per request, newest first
+PAGE_LIMIT = 100
+MAX_PAGES = 1000
 
 
 def parse_symbols(environ):
@@ -37,11 +40,13 @@ def split_pair(symbol):
     return clean_symbol[:3], clean_symbol[3:]
 
 
-def format_fxmacrodata_url(symbol, start_date, end_date):
+def format_fxmacrodata_url(symbol, start_date, end_date, offset=0):
     base, quote = split_pair(symbol)
     query = {
         "start_date": start_date.strftime("%Y-%m-%d"),
         "end_date": end_date.strftime("%Y-%m-%d"),
+        "limit": PAGE_LIMIT,
+        "offset": offset,
     }
 
     return f"{FXMACRODATA_API_URL}/{base.lower()}/{quote.lower()}?{urlencode(query)}"
@@ -54,10 +59,24 @@ def fxmacrodata_headers(api_key=None):
 
 
 def fetch_fx_pair(symbol, start_date, end_date, api_key=None):
-    url = format_fxmacrodata_url(symbol, start_date, end_date)
-    response = requests.get(url, headers=fxmacrodata_headers(api_key), timeout=30)
-    response.raise_for_status()
-    rows = response.json().get("data", [])
+    rows = []
+    offset = 0
+    for _ in range(MAX_PAGES):
+        url = format_fxmacrodata_url(symbol, start_date, end_date, offset)
+        response = requests.get(url, headers=fxmacrodata_headers(api_key), timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        page = payload.get("data") or []
+        rows.extend(page)
+
+        pagination = payload.get("pagination")
+        if (
+            not page
+            or not isinstance(pagination, dict)
+            or not pagination.get("has_more")
+        ):
+            break
+        offset = pagination.get("next_offset") or offset + len(page)
 
     if len(rows) == 0:
         raise ValueError(f"No FXMacroData rows returned for {symbol}")
@@ -70,6 +89,7 @@ def fetch_fx_pair(symbol, start_date, end_date, api_key=None):
     data["low"] = data["val"].astype(float)
     data["close"] = data["val"].astype(float)
     data["volume"] = 0.0
+    data = data.drop_duplicates("date").sort_values("date", ignore_index=True)
 
     return data[["symbol", "date", "open", "high", "low", "close", "volume"]]
 
